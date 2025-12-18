@@ -28,8 +28,8 @@ from telegram.ext import (
 # ============================================================
 # CONFIG — FALLBACK VALUES YOU GAVE
 # ============================================================
-BOT_TOKEN = os.getenv("BOT_TOKEN") or "8581682166:AAHMpX1u-IAU3PjTJ8nu9axtgxiwkyNMTDg"
-GROUP_ID = int(os.getenv("GROUP_ID") or "-1003423641782")
+BOT_TOKEN = os.getenv("BOT_TOKEN") or "BOT_TOKEN"
+GROUP_ID = int(os.getenv("GROUP_ID") or "GROUP_ID")
 ADMIN_IDS = [int(x) for x in (os.getenv("ADMIN_IDS") or "8303408497").split(",")]
 
 STATE_FILE = "anon_state.json"
