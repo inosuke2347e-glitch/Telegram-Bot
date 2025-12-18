@@ -1,3 +1,15 @@
+# ============================================================
+# FINAL MASTER VERSION — OPTION A
+# Anonymous Chat + Media Forwarder Bot (Full Working Code)
+# python-telegram-bot v20.3
+# Single Cell — No Patching Needed
+# ============================================================
+
+!pip install python-telegram-bot==20.3 --no-deps -q
+!pip install httpx==0.27.0 nest_asyncio -q
+import nest_asyncio
+nest_asyncio.apply()
+
 import os
 import json
 import time
@@ -13,29 +25,34 @@ from telegram.ext import (
     filters,
 )
 
-# --- CONFIGURATION ---
-# It is better to rely on Environment Variables for security.
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID = int(os.getenv("GROUP_ID") or 0)
-ADMIN_IDS = [int(x) for x in (os.getenv("ADMIN_IDS") or "").split(",") if x.strip()]
+# ============================================================
+# CONFIG — FALLBACK VALUES YOU GAVE
+# ============================================================
+BOT_TOKEN = os.getenv("BOT_TOKEN") or "8581682166:AAHMpX1u-IAU3PjTJ8nu9axtgxiwkyNMTDg"
+GROUP_ID = int(os.getenv("GROUP_ID") or "-1003423641782")
+ADMIN_IDS = [int(x) for x in (os.getenv("ADMIN_IDS") or "8303408497").split(",")]
 
 STATE_FILE = "anon_state.json"
 RATE_LIMIT = 1.3
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
-# --- STATE MANAGEMENT ---
+# ============================================================
+# STATE
+# ============================================================
 queue: List[int] = []
 sessions: Dict[int, int] = {}
 last_time: Dict[int, float] = {}
 
+# ============================================================
+# PERSISTENCE
+# ============================================================
 def save_state():
     try:
         with open(STATE_FILE, "w") as f:
             json.dump({"queue": queue, "sessions": sessions}, f)
-    except Exception as e:
-        logger.error(f"Save state failed: {e}")
+    except:
+        pass
 
 def load_state():
     global queue, sessions
@@ -43,16 +60,16 @@ def load_state():
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
-                queue = data.get("queue", [])
-                sessions = {int(k): int(v) for k, v in data.get("sessions", {}).items()}
-    except Exception as e:
-        logger.error(f"Load state failed: {e}")
+            queue = data.get("queue", [])
+            sessions = {int(k): int(v) for k, v in data.get("sessions", {}).items()}
+    except:
         queue = []
         sessions = {}
 
-# --- HELPERS ---
-def is_admin(uid): 
-    return uid in ADMIN_IDS
+# ============================================================
+# HELPERS
+# ============================================================
+def is_admin(uid): return uid in ADMIN_IDS
 
 async def notify_admins(app, text):
     for adm in ADMIN_IDS:
@@ -68,7 +85,7 @@ def rate_limited(uid):
     last_time[uid] = now
     return False
 
-def pair(a, b):
+def pair(a,b):
     sessions[a] = b
     sessions[b] = a
     save_state()
@@ -77,7 +94,7 @@ def unpair(uid):
     p = sessions.pop(uid, None)
     if p:
         sessions.pop(p, None)
-        save_state()
+    save_state()
     return p
 
 def find_partner(uid):
@@ -95,114 +112,177 @@ def find_partner(uid):
     return None
 
 async def send_menu(ctx, chat_id):
-    menu_text = (
-        "✨ **Anonymous Bot Menu** ✨\n\n"
-        "/anon_start – Find a partner\n"
-        "/anon_next – Skip to next partner\n"
-        "/anon_stop – Stop current chat\n"
-        "/status – Check connection status"
-    )
     try:
-        await ctx.bot.send_message(chat_id, menu_text, parse_mode="Markdown")
+        await ctx.bot.send_message(
+            chat_id,
+            "Anonymous Bot Activated\n"
+            "/anon_start – Find partner\n"
+            "/anon_next – Next partner\n"
+            "/anon_stop – Stop chat\n"
+            "/status – Chat status"
+        )
     except:
         pass
 
-# --- COMMAND HANDLERS ---
-async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# ============================================================
+# COMMANDS
+# ============================================================
+async def start(update, ctx):
     await send_menu(ctx, update.effective_user.id)
 
-async def myid(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Your ID: `{update.effective_user.id}`", parse_mode="Markdown")
+async def myid(update, ctx):
+    await update.message.reply_text(str(update.effective_user.id))
 
-async def status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    if uid in sessions:
-        await update.message.reply_text("✅ Status: **Connected**", parse_mode="Markdown")
-    elif uid in queue:
-        await update.message.reply_text("⏳ Status: **Waiting in Queue**", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("❌ Status: **Not in chat**", parse_mode="Markdown")
+async def show_config(update, ctx):
+    if not is_admin(update.effective_user.id):
+        return await update.message.reply_text("Unauthorized.")
+    await update.message.reply_text(str({
+        "BOT_TOKEN": "***",
+        "GROUP_ID": GROUP_ID,
+        "ADMIN_IDS": ADMIN_IDS
+    }))
 
-async def anon_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def clear_state(update, ctx):
+    if not is_admin(update.effective_user.id):
+        return await update.message.reply_text("Unauthorized.")
+
+    global queue, sessions
+    queue = []
+    sessions = {}
+    if os.path.exists(STATE_FILE):
+        os.remove(STATE_FILE)
+
+    await update.message.reply_text("State cleared.")
+    await send_menu(ctx, update.effective_user.id)
+
+# ============================================================
+# ANONYMOUS CHAT COMMANDS
+# ============================================================
+async def anon_start(update, ctx):
     uid = update.effective_user.id
     p = find_partner(uid)
-    if p:
-        await ctx.bot.send_message(uid, "🎯 **Partner connected!** Say hi.", parse_mode="Markdown")
-        await ctx.bot.send_message(p, "🎯 **Partner connected!** Say hi.", parse_mode="Markdown")
-    else:
-        await ctx.bot.send_message(uid, "⏳ Searching for a partner... please wait.")
 
-async def anon_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if p:
+        await ctx.bot.send_message(uid, "🎯 Partner connected.")
+        await ctx.bot.send_message(p, "🎯 Partner connected.")
+        await send_menu(ctx, uid)
+        await send_menu(ctx, p)
+    else:
+        await ctx.bot.send_message(uid, "⌛ Searching for partner...")
+        await send_menu(ctx, uid)
+
+async def anon_next(update, ctx):
     uid = update.effective_user.id
     old = unpair(uid)
-    if old:
-        await ctx.bot.send_message(old, "⚠️ Partner disconnected.")
-    
-    p = find_partner(uid)
-    if p:
-        await ctx.bot.send_message(uid, "🎯 **New partner connected!**", parse_mode="Markdown")
-        await ctx.bot.send_message(p, "🎯 **New partner connected!**", parse_mode="Markdown")
-    else:
-        await ctx.bot.send_message(uid, "⏳ Searching for a new partner...")
 
-async def anon_stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if old:
+        await ctx.bot.send_message(old, "⚠ Partner disconnected.")
+        await send_menu(ctx, old)
+
+    p = find_partner(uid)
+
+    if p:
+        await ctx.bot.send_message(uid, "🎯 New partner connected.")
+        await ctx.bot.send_message(p, "🎯 New partner connected.")
+        await send_menu(ctx, uid)
+        await send_menu(ctx, p)
+    else:
+        await ctx.bot.send_message(uid, "⌛ Searching for partner...")
+        await send_menu(ctx, uid)
+
+async def anon_stop(update, ctx):
     uid = update.effective_user.id
     p = unpair(uid)
+
     if p:
-        await ctx.bot.send_message(p, "⚠️ Partner disconnected.")
+        await ctx.bot.send_message(p, "⚠ Partner disconnected.")
+        await send_menu(ctx, p)
+
     if uid in queue:
         queue.remove(uid)
         save_state()
-    await ctx.bot.send_message(uid, "❌ You left the chat.")
 
-# --- MESSAGE HANDLING ---
-async def handle_all_messages(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await ctx.bot.send_message(uid, "❌ You left the chat.")
+    await send_menu(ctx, uid)
+
+async def status(update, ctx):
+    uid = update.effective_user.id
+    if uid in sessions:
+        await update.message.reply_text("✔ Connected")
+    elif uid in queue:
+        await update.message.reply_text("⌛ Waiting")
+    else:
+        await update.message.reply_text("❌ Not in chat")
+    await send_menu(ctx, uid)
+
+# ============================================================
+# FIXED MEDIA HANDLERS
+# ============================================================
+async def handle_all_messages(update, ctx):
+    """
+    Combined handler for both media forwarding AND partner relay
+    This ensures both functions work together without interference
+    """
     uid = update.effective_user.id
     msg = update.effective_message
-
-    if not msg or (msg.text and msg.text.startswith('/')):
+    
+    # Skip command messages
+    if msg.text and msg.text.startswith('/'):
         return
-
-    # 1. Forward to Group (Monitoring)
-    if any([msg.photo, msg.video, msg.audio, msg.voice, msg.document, msg.sticker]):
+    
+    # 1. ALWAYS forward media to group (if it has attachments)
+    if msg.photo or msg.video or msg.audio or msg.voice or msg.document or msg.sticker:
         try:
             await ctx.bot.forward_message(GROUP_ID, msg.chat_id, msg.message_id)
-        except:
-            pass
-
-    # 2. Relay to Partner
+        except Exception as e:
+            await notify_admins(ctx.application, f"Group forward failed: {e}")
+    
+    # 2. Relay to partner if user is in a session
     if uid in sessions and not rate_limited(uid):
         partner = sessions.get(uid)
-        try:
-            await ctx.bot.copy_message(
-                chat_id=partner,
-                from_chat_id=msg.chat_id,
-                message_id=msg.message_id,
-                caption=msg.caption
-            )
-        except:
-            await ctx.bot.send_message(uid, "⚠️ Failed to send message to partner.")
-    elif uid not in sessions:
-        await ctx.bot.send_message(uid, "❌ You aren't connected to anyone. Use /anon_start")
-
-# --- MAIN LOOP ---
-if __name__ == "__main__":
-    if not BOT_TOKEN:
-        print("ERROR: BOT_TOKEN not found in environment variables!")
-        exit(1)
-
-    load_state()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("myid", myid))
-    app.add_handler(CommandHandler("anon_start", anon_start))
-    app.add_handler(CommandHandler("anon_next", anon_next))
-    app.add_handler(CommandHandler("anon_stop", anon_stop))
-    app.add_handler(CommandHandler("status", status))
+        if partner:
+            try:
+                # Use copy_message instead of forward to preserve anonymity
+                await ctx.bot.copy_message(
+                    partner, 
+                    msg.chat_id, 
+                    msg.message_id,
+                    caption=msg.caption if msg.caption else None
+                )
+            except Exception as e:
+                await notify_admins(ctx.application, f"Relay fail: {e}")
     
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_all_messages, block=False))
+    # 3. If not in session and not a command, show help
+    elif uid not in sessions:
+        await ctx.bot.send_message(uid, "❌ Not connected to partner. Use /anon_start")
+        await send_menu(ctx, uid)
 
-    print("🚀 Bot is starting...")
-    app.run_polling()
+# ============================================================
+# BUILD BOT (GLOBAL APP — REQUIRED)
+# ============================================================
+load_state()
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# Command handlers
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("myid", myid))
+app.add_handler(CommandHandler("show_config", show_config))
+app.add_handler(CommandHandler("clear_state", clear_state))
+app.add_handler(CommandHandler("anon_start", anon_start))
+app.add_handler(CommandHandler("anon_next", anon_next))
+app.add_handler(CommandHandler("anon_stop", anon_stop))
+app.add_handler(CommandHandler("status", status))
+
+# SINGLE unified handler for ALL messages (text + media)
+# Using ALL filter to catch everything except commands
+app.add_handler(
+    MessageHandler(
+        filters.ALL & ~filters.COMMAND,
+        handle_all_messages,
+        block=False
+    )
+)
+
+print("🔥 BOT RUNNING…")
+app.run_polling()
     
